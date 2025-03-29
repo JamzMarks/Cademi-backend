@@ -2,14 +2,17 @@
 GET  http://localhost:3050
 
 ### SIGNUP NEW USER
-POST http://localhost:3050/user/signup
+POST http://localhost:3050/user
 Content-Type: application/json
 
 {
-    "email": "noadmin@mail.com",
+    "email": "no2admin@mail.com",
     "password": "noadminpassword",
-    "firstName": "James",
-    "lastName": "Marques"
+    "userInfo": {
+        "firstName": "James",
+        "lastName": "Marques",
+        "dateOfBirthday": "2025-03-27T07:28:40.000Z"
+    }
 }
 
 ### SIGNUP NEW USER

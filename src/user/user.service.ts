@@ -1,14 +1,18 @@
 
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from './user.entity';
 import { Repository, Transaction } from 'typeorm';
 import { createUserDto } from './dtos/create-user.dto';
+import * as bcrypt from 'bcrypt';
 
 import { UserSecurityService } from './user-security/user-security.service';
 import { UserConfigService } from './user-config/user-config.service';
 import { UserInfoService } from './user-info/user-info.service';
+import { NotFoundError } from 'rxjs';
 
+
+const saltRounds = 12;
 @Injectable()
 export class UserService {
 
@@ -21,24 +25,53 @@ export class UserService {
 
 
     async create(data: createUserDto){
-        const {userConfig, userInfo, userSecurity} = data
+        const {email, password, userConfig, userInfo, userSecurity} = data;
+        const existingUser = await this.repo.findOne({where: {email}});
+        if(existingUser){
+            throw new BadRequestException('E-mail already in use');
+        }
 
-        const user = this.repo.create({email: data.email, password: data.password});
-        
         return await this.repo.manager.transaction(async (transactionalEntityManager) => {
 
-            // Cria as entidades relacionadas dentro da transação
-            const userConfigData = await this.configService.create(userConfig,transactionalEntityManager);
-            const userSecurityData = await this.securityService.create(userSecurity, transactionalEntityManager);
-            const userInfoData = await this.userInfoService.create(userInfo, transactionalEntityManager);
+            const hash = await bcrypt.hash(password, saltRounds);
+            const user = this.repo.create({email, password: hash});
 
-            // Associa as entidades relacionadas ao usuário
+            const [userConfigData, userSecurityData, userInfoData] = await Promise.all([
+                this.configService.create(userConfig, transactionalEntityManager),
+                this.securityService.create(userSecurity, transactionalEntityManager),
+                this.userInfoService.create(userInfo, transactionalEntityManager),
+            ])
+            
+            // Associação dos IDs das entidades relacionadas
             user.configId = userConfigData.id;
             user.securityId = userSecurityData.id;
             user.userInfoId = userInfoData.id;
 
             // Salva o usuário dentro da mesma transação
             return await transactionalEntityManager.save(User, user);
-        });
+        });      
+    }
+
+    async findOne(id: string): Promise<User>{
+        const result = await this.repo.findOne({where: {id}})
+        if(!result){
+            throw new NotFoundException(`User with ID ${id} not found`); 
+        }
+        return result
+    }
+    async findByEmail(email: string): Promise<User>{
+        const result = await this.repo.findOne({where: {email}})
+        if(!result){
+            throw new NotFoundException(`User with email ${email} not found`); 
+        }
+        return result
+    }
+
+    async findAll(){
+        const result = await this.repo.find()
+        if(result.length === 0){
+            throw new NotFoundException(`Users not found`); 
+        }
+        return result
     }
 }
